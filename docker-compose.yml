@@ -1,0 +1,43 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: aequi-server
+    expose:
+      - "3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      # Add your RPC URLs and other env variables here
+      - ETHEREUM_RPC_URL=${ETHEREUM_RPC_URL:-}
+      - BSC_RPC_URL=${BSC_RPC_URL:-}
+    restart: unless-stopped
+    networks:
+      - aequi-network
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        - VITE_API_BASE_URL=${API_URL:-http://localhost:3000}
+    container_name: aequi-web
+    expose:
+      - "80"
+    depends_on:
+      server:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - aequi-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  aequi-network:
+    driver: bridge

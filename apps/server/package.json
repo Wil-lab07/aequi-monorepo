@@ -1,0 +1,27 @@
+{
+  "name": "@aequi/server",
+  "version": "0.0.1",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^22.9.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.1.0",
+    "@fastify/rate-limit": "^10.3.0",
+    "@pancakeswap/swap-sdk-core": "^1.5.1",
+    "@pancakeswap/v2-sdk": "^1.1.7",
+    "@pancakeswap/v3-sdk": "^3.9.7",
+    "@uniswap/v2-sdk": "^4.16.0",
+    "@uniswap/v3-sdk": "^3.26.0",
+    "dotenv": "^16.4.5",
+    "fastify": "^5.6.1",
+    "viem": "^2.38.6",
+    "zod": "^3.24.1"
+  }
+}

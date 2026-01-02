@@ -1,0 +1,46 @@
+# Development docker-compose with hot reload
+services:
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile.dev
+    container_name: aequi-server-dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/server:/app/apps/server
+      - ./node_modules:/app/node_modules
+      - /app/node_modules/.cache
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - ETHEREUM_RPC_URL=${ETHEREUM_RPC_URL:-}
+      - BSC_RPC_URL=${BSC_RPC_URL:-}
+    restart: unless-stopped
+    networks:
+      - aequi-network
+    command: bun run dev
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile.dev
+    container_name: aequi-web-dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./apps/web:/app/apps/web
+      - ./node_modules:/app/node_modules
+      - /app/node_modules/.cache
+    environment:
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:3000}
+    depends_on:
+      - server
+    restart: unless-stopped
+    networks:
+      - aequi-network
+    command: bun run dev
+
+networks:
+  aequi-network:
+    driver: bridge

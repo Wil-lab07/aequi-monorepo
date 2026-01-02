@@ -1,0 +1,9 @@
+{
+  "name": "@aequi/contracts",
+  "version": "0.0.1",
+  "private": true,
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
+    "hardhat": "^2.28.2"
+  }
+}
