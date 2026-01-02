@@ -1,5 +1,7 @@
 # Aequi Monorepo
 
+> ⚠️ Work in progress: APIs, contracts, and behavior may change; not production-audited yet.
+
 Aequi is a DEX aggregator and swap executor for Ethereum and BSC. The monorepo is Turbo-managed, uses TypeScript across all packages, and prefers Bun for local workflows.
 
 ## Packages

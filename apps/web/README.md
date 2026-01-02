@@ -1,5 +1,7 @@
 # Aequi Web Interface
 
+> ⚠️ Work in progress: UI/API may change; not production-ready.
+
 React/Vite frontend for the Aequi DEX aggregator. Talks to the Fastify API to fetch prices/quotes and builds swaps, with Wagmi for wallet connectivity.
 
 ## Features

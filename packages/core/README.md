@@ -1,5 +1,7 @@
 # @aequi/core
 
+> ⚠️ Work in progress: APIs may change; not production-ready.
+
 Shared types, ABIs, and swap construction utilities used by the Aequi server and pricing libraries.
 
 ## Contents

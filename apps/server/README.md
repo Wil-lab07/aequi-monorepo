@@ -1,5 +1,7 @@
 # Aequi Server
 
+> ⚠️ Work in progress: endpoints and calldata formats may change; not production-ready.
+
 Fastify API that discovers pools, prices routes, and builds calldata for direct router swaps or AequiExecutor multicall.
 
 ## What it does

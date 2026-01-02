@@ -1,5 +1,7 @@
 # @aequi/pricing
 
+> ⚠️ Work in progress: APIs may change; not production-ready.
+
 Pricing, routing, and pool discovery utilities used by the Aequi server.
 
 ## Contents
