@@ -68,7 +68,7 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
                 version: 'v3',
                 factoryAddress: '0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865',
                 routerAddress: '0x1b81D678ffb9C0263b24A97847620C99d213eB14',
-                quoterAddress: '0xB048Bbc1Ee6b733FFfCFb9e9Ce52fC7b48353629',
+                quoterAddress: '0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997',
                 feeTiers: [PancakeFeeAmount.LOWEST, PancakeFeeAmount.LOW, PancakeFeeAmount.MEDIUM],
             },
             {
@@ -86,7 +86,7 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
                 version: "v3",
                 factoryAddress: '0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7',
                 routerAddress: '0xB971eF87ede563556b2ED4b1C0b0019111Dd85d2',
-                quoterAddress: '0x78D78E420Da98E95CF84Eb50144782750025cf26',
+                quoterAddress: '0x78D78E420Da98ad378D7799bE8f4AF69033EB077',
                 feeTiers: [FeeAmount.LOWEST, FeeAmount.LOW, FeeAmount.MEDIUM],
             },
         ],

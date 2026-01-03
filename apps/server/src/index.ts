@@ -546,7 +546,7 @@ export const buildServer = async () => {
 
         const slippageInput = Number.isFinite(parsed.data.slippageBps) ? parsed.data.slippageBps! : undefined
         const slippageBps = slippageInput ?? 50
-        const deadlineSeconds = Number.isFinite(parsed.data.deadlineSeconds) ? parsed.data.deadlineSeconds! : 600
+        const deadlineSeconds = Number.isFinite(parsed.data.deadlineSeconds) ? parsed.data.deadlineSeconds! : 180
 
         console.log(`[API] Swap request: ${effectiveTokenA} -> ${effectiveTokenB}, Amount: ${parsed.data.amount}`)
 

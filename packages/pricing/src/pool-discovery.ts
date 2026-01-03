@@ -361,6 +361,7 @@ export class PoolDiscovery {
       console.log(`[PoolDiscovery] Checking intermediate: ${candidate}`)
       const intermediate = await this.loadIntermediate(chain, candidate, cache)
 
+      // Fetch quotes for Leg A (tokenIn -> intermediate) from ALL DEXes
       const legAQuotes = await this.fetchDirectQuotes(
         chain,
         tokenIn,
@@ -371,58 +372,64 @@ export class PoolDiscovery {
         allowedVersions,
       )
 
-      const legA = selectBestQuote(legAQuotes)
-      if (!legA || legA.amountOut === 0n) {
-        continue
+      // Try each legA quote as a starting point
+      for (const legA of legAQuotes) {
+        if (!legA || legA.amountOut === 0n) {
+          continue
+        }
+
+        // Fetch quotes for Leg B (intermediate -> tokenOut) from ALL DEXes
+        const legBQuotes = await this.fetchDirectQuotes(
+          chain,
+          intermediate,
+          tokenOut,
+          legA.amountOut,
+          gasPriceWei,
+          client,
+          allowedVersions,
+        )
+
+        // Combine each legA with each legB (cross-DEX routing)
+        for (const legB of legBQuotes) {
+          if (!legB || legB.amountOut === 0n) {
+            continue
+          }
+
+          const { mid, execution } = { 
+            mid: multiplyQ18(legA.midPriceQ18, legB.midPriceQ18), 
+            execution: multiplyQ18(legA.executionPriceQ18, legB.executionPriceQ18) 
+          }
+          
+          // Sum individual hop price impacts instead of recalculating from combined price
+          const combinedPriceImpactBps = legA.priceImpactBps + legB.priceImpactBps
+          
+          const hopVersions: RouteHopVersion[] = [...legA.hopVersions, ...legB.hopVersions]
+          const estimatedGasUnits = estimateGasForRoute(hopVersions)
+          const gasPrice = legA.gasPriceWei ?? legB.gasPriceWei ?? gasPriceWei
+          const estimatedGasCostWei = gasPrice ? estimatedGasUnits * gasPrice : null
+
+          results.push({
+            chain: chain.key,
+            amountIn,
+            amountOut: legB.amountOut,
+            priceQ18: execution,
+            executionPriceQ18: execution,
+            midPriceQ18: mid,
+            priceImpactBps: combinedPriceImpactBps,
+            path: [tokenIn, intermediate, tokenOut],
+            routeAddresses: [tokenIn.address, intermediate.address, tokenOut.address],
+            sources: [...legA.sources, ...legB.sources],
+            liquidityScore: minBigInt(legA.liquidityScore, legB.liquidityScore),
+            hopVersions,
+            estimatedGasUnits,
+            estimatedGasCostWei,
+            gasPriceWei: gasPrice ?? null,
+          })
+        }
       }
-
-      const legBQuotes = await this.fetchDirectQuotes(
-        chain,
-        intermediate,
-        tokenOut,
-        legA.amountOut,
-        gasPriceWei,
-        client,
-        allowedVersions,
-      )
-      const legB = selectBestQuote(legBQuotes)
-
-      if (!legB || legB.amountOut === 0n) {
-        continue
-      }
-
-      const { mid, execution } = { mid: multiplyQ18(legA.midPriceQ18, legB.midPriceQ18), execution: multiplyQ18(legA.executionPriceQ18, legB.executionPriceQ18) }
-      const priceImpactBps = computePriceImpactBps(
-        mid,
-        amountIn,
-        legB.amountOut,
-        tokenIn.decimals,
-        tokenOut.decimals,
-      )
-      const hopVersions: RouteHopVersion[] = [...legA.hopVersions, ...legB.hopVersions]
-      const estimatedGasUnits = estimateGasForRoute(hopVersions)
-      const gasPrice = legA.gasPriceWei ?? legB.gasPriceWei ?? gasPriceWei
-      const estimatedGasCostWei = gasPrice ? estimatedGasUnits * gasPrice : null
-
-      results.push({
-        chain: chain.key,
-        amountIn,
-        amountOut: legB.amountOut,
-        priceQ18: execution,
-        executionPriceQ18: execution,
-        midPriceQ18: mid,
-        priceImpactBps,
-        path: [tokenIn, intermediate, tokenOut],
-        routeAddresses: [tokenIn.address, intermediate.address, tokenOut.address],
-        sources: [...legA.sources, ...legB.sources],
-        liquidityScore: minBigInt(legA.liquidityScore, legB.liquidityScore),
-        hopVersions,
-        estimatedGasUnits,
-        estimatedGasCostWei,
-        gasPriceWei: gasPrice ?? null,
-      })
     }
 
+    console.log(`[PoolDiscovery] Found ${results.length} multi-hop quotes for ${tokenIn.symbol} -> ${tokenOut.symbol}`)
     return results
   }
 
@@ -555,96 +562,10 @@ export class PoolDiscovery {
     gasPriceWei: bigint | null,
     snapshot: V3PoolSnapshot,
   ): Promise<PriceQuote | null> {
-    if (snapshot.liquidity < this.config.minV3LiquidityThreshold) {
-      return null
-    }
-
-    const tokenInInstance = new UniToken(tokenIn.chainId, tokenIn.address, tokenIn.decimals, tokenIn.symbol, tokenIn.name)
-    const tokenOutInstance = new UniToken(tokenOut.chainId, tokenOut.address, tokenOut.decimals, tokenOut.symbol, tokenOut.name)
-    
-    let pool: UniPool
-    try {
-      pool = new UniPool(
-        tokenInInstance,
-        tokenOutInstance,
-        snapshot.fee,
-        snapshot.sqrtPriceX96.toString(),
-        snapshot.liquidity.toString(),
-        snapshot.tick,
-        // Provide a dummy tick data provider to avoid "No tick data provider was given" error
-        // This is a workaround for simple quotes that don't cross ticks.
-        // For accurate cross-tick quotes, we should use the Quoter contract.
-        // But for now, let's try to suppress the error if the swap is small enough.
-        // Actually, the SDK throws if provider is missing even if not needed? No, only if needed.
-        // If it throws, it means we ARE crossing a tick.
-        // So we must catch the error.
-      )
-    } catch (error) {
-      console.warn(`[PoolDiscovery] Failed to create V3 pool instance for ${tokenIn.symbol}->${tokenOut.symbol}:`, (error as Error).message)
-      return null
-    }
-
-    let amountOutRaw: bigint
-    try {
-      const amountInCurrency = UniCurrencyAmount.fromRawAmount(tokenInInstance, amountIn.toString())
-      // This call requires tick data if the swap crosses a tick
-      const quoted = await pool.getOutputAmount(amountInCurrency)
-      amountOutRaw = toRawAmount(quoted[0])
-    } catch (error) {
-      // If we fail here due to missing tick data, it means the swap is too large for the current tick liquidity.
-      // We log it and return null, effectively skipping this pool for this amount.
-      console.warn(`[PoolDiscovery] V3 quote failed for ${tokenIn.symbol}->${tokenOut.symbol} (likely crossing tick):`, (error as Error).message)
-      return null
-    }
-
-    if (amountOutRaw <= 0n) {
-      return null
-    }
-
-    const midPriceQ18 = computeMidPriceQ18FromPrice(dex.protocol, tokenInInstance as any, tokenOut.decimals, pool.token0Price)
-    const executionPriceQ18 = computeExecutionPriceQ18(amountIn, amountOutRaw, tokenIn.decimals, tokenOut.decimals)
-    const priceImpactBps = computePriceImpactBps(
-      midPriceQ18,
-      amountIn,
-      amountOutRaw,
-      tokenIn.decimals,
-      tokenOut.decimals,
-    )
-
-    const hopVersions: RouteHopVersion[] = ['v3']
-    const estimatedGasUnits = estimateGasForRoute(hopVersions)
-    const estimatedGasCostWei = gasPriceWei ? gasPriceWei * estimatedGasUnits : null
-
-    return {
-      chain: chain.key,
-      amountIn,
-      amountOut: amountOutRaw,
-      priceQ18: executionPriceQ18,
-      executionPriceQ18,
-      midPriceQ18,
-      priceImpactBps,
-      path: [tokenIn, tokenOut],
-      routeAddresses: [tokenIn.address, tokenOut.address],
-      sources: [
-        {
-          dexId: dex.id,
-          poolAddress: snapshot.poolAddress,
-          feeTier: snapshot.fee,
-          amountIn,
-          amountOut: amountOutRaw,
-          reserves: {
-            liquidity: snapshot.liquidity,
-            token0: snapshot.token0,
-            token1: snapshot.token1,
-          },
-        },
-      ],
-      liquidityScore: snapshot.liquidity,
-      hopVersions,
-      estimatedGasUnits,
-      estimatedGasCostWei,
-      gasPriceWei,
-    }
+    // V3 SDK-based quotes removed - use Quoter contract in fetchDirectQuotes instead
+    // This method is now a placeholder and should not be called
+    console.warn(`[PoolDiscovery] computeV3Quote called but V3 quotes should use Quoter contract`)
+    return null
   }
 
   private buildV2Tokens(dex: DexConfig, tokenIn: TokenMetadata, tokenOut: TokenMetadata) {

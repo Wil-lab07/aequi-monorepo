@@ -40,7 +40,7 @@ const DEFAULTS = {
     rateLimitWindow: '1 minute',
   },
   executor: {
-    interhopBufferBps: 3,
+    interhopBufferBps: 10,
     quoteTtlSeconds: 15,
     bscAddress: '0x03cbBc27784c64FC4A6f11eFe8D1C3b4Dee204EA' as Address,
   },

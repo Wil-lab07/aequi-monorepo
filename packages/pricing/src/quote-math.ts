@@ -146,13 +146,25 @@ export const estimateAmountOutFromMidPrice = (
 }
 
 export const compareQuotes = (a: PriceQuote, b: PriceQuote) => {
-  if (a.amountOut === b.amountOut) {
-    if (a.liquidityScore === b.liquidityScore) {
-      return a.priceImpactBps <= b.priceImpactBps ? -1 : 1
-    }
+  // Primary: Higher amountOut wins
+  if (a.amountOut !== b.amountOut) {
+    return a.amountOut > b.amountOut ? -1 : 1
+  }
+  
+  // Secondary: Better net output after gas cost wins
+  const aNetOut = a.estimatedGasCostWei ? a.amountOut - a.estimatedGasCostWei : a.amountOut
+  const bNetOut = b.estimatedGasCostWei ? b.amountOut - b.estimatedGasCostWei : b.amountOut
+  if (aNetOut !== bNetOut) {
+    return aNetOut > bNetOut ? -1 : 1
+  }
+  
+  // Tertiary: Higher liquidity wins (more stable)
+  if (a.liquidityScore !== b.liquidityScore) {
     return a.liquidityScore > b.liquidityScore ? -1 : 1
   }
-  return a.amountOut > b.amountOut ? -1 : 1
+  
+  // Final: Lower price impact wins
+  return a.priceImpactBps <= b.priceImpactBps ? -1 : 1
 }
 
 export const estimateGasForRoute = (hops: RouteHopVersion[]): bigint => {

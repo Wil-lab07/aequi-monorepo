@@ -6,8 +6,8 @@ export const clampSlippage = (value: number): number => {
   if (!Number.isFinite(value) || Number.isNaN(value) || value < 0) {
     return 0
   }
-  if (value > 5000) {
-    return 5000
+  if (value > 1000) {
+    return 1000
   }
   return Math.floor(value)
 }
