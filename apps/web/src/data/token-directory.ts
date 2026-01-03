@@ -10,8 +10,8 @@ export const tokenDirectory: Record<ChainKey, TokenPreset[]> = {
   ethereum: [
     {
       address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-      symbol: 'WETH',
-      label: 'WETH · Wrapped Ether',
+      symbol: 'ETH',
+      label: 'ETH · Ether',
     },
     {
       address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
@@ -37,8 +37,8 @@ export const tokenDirectory: Record<ChainKey, TokenPreset[]> = {
   bsc: [
     {
       address: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
-      symbol: 'WBNB',
-      label: 'WBNB · Wrapped BNB',
+      symbol: 'BNB',
+      label: 'BNB · BNB',
     },
     {
       address: '0x55d398326f99059fF775485246999027B3197955',

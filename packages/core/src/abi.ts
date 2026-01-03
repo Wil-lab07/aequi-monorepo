@@ -91,11 +91,29 @@ export const AEQUI_EXECUTOR_ABI = [
           { name: 'target', type: 'address' },
           { name: 'value', type: 'uint256' },
           { name: 'data', type: 'bytes' },
+          { name: 'injectToken', type: 'address' },
+          { name: 'injectOffset', type: 'uint256' },
         ],
       },
-      { name: 'recipient', type: 'address' },
       { name: 'tokensToFlush', type: 'address[]' },
     ],
     outputs: [{ name: 'results', type: 'bytes[]' }],
+  },
+] as const satisfies Abi
+
+export const WETH_ABI = [
+  {
+    type: 'function',
+    name: 'deposit',
+    stateMutability: 'payable',
+    inputs: [],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'withdraw',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'amount', type: 'uint256' }],
+    outputs: [],
   },
 ] as const satisfies Abi

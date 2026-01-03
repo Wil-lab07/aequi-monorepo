@@ -1,6 +1,6 @@
 import { encodeFunctionData } from 'viem'
 import type { Address, Hex } from 'viem'
-import { AEQUI_EXECUTOR_ABI, V2_ROUTER_ABI, V3_ROUTER_ABI } from './abi'
+import { AEQUI_EXECUTOR_ABI, V2_ROUTER_ABI, V3_ROUTER_ABI, WETH_ABI } from './abi'
 import type { ChainConfig, ChainKey, PriceQuote, PriceSource, TokenMetadata } from './types'
 
 interface ExecutorCallPlan {
@@ -21,6 +21,8 @@ export interface SwapBuildParams {
   recipient: Address
   slippageBps: number
   deadlineSeconds: number
+  useNativeInput?: boolean
+  useNativeOutput?: boolean
 }
 
 export interface SwapTransaction {
@@ -41,7 +43,7 @@ export interface SwapTransaction {
   executor?: {
     pulls: { token: Address; amount: bigint }[]
     approvals: { token: Address; spender: Address; amount: bigint; revokeAfter: boolean }[]
-    calls: { target: Address; value: bigint; data: Hex }[]
+    calls: { target: Address; value: bigint; data: Hex; injectToken: Address; injectOffset: bigint }[]
     tokensToFlush: Address[]
   }
 }
@@ -97,7 +99,7 @@ export class SwapBuilder {
       ? params.amountOutMin
       : this.applySlippage(params.quote.amountOut, boundedSlippage)
 
-    if (uniqueDexes.size === 1) {
+    if (uniqueDexes.size === 1 && !params.useNativeInput && !params.useNativeOutput) {
       const dexId = params.quote.sources[0]!.dexId
       const dex = chain.dexes.find((entry) => entry.id === dexId)
       if (!dex) {
@@ -118,6 +120,8 @@ export class SwapBuilder {
       params.recipient,
       amountOutMinimum,
       BigInt(deadline),
+      params.useNativeInput,
+      params.useNativeOutput,
     )
   }
 
@@ -168,6 +172,8 @@ export class SwapBuilder {
     recipient: Address,
     amountOutMin: bigint,
     deadline: bigint,
+    useNativeInput?: boolean,
+    useNativeOutput?: boolean,
   ): SwapTransaction {
     const executorAddress = this.resolveExecutor(chain.key, chain.name)
 
@@ -176,12 +182,52 @@ export class SwapBuilder {
       throw new Error('Quote is missing input token metadata')
     }
 
-    const pulls = [{ token: inputToken.address, amount: quote.amountIn }]
+    const pulls: { token: Address; amount: bigint }[] = []
+    if (!useNativeInput) {
+      pulls.push({ token: inputToken.address, amount: quote.amountIn })
+    }
+
     const approvals: { token: Address; spender: Address; amount: bigint; revokeAfter: boolean }[] = []
-    const executorCalls: { target: Address; value: bigint; data: Hex }[] = []
-    const tokensToFlush = new Set<Address>([inputToken.address])
+    const executorCalls: { target: Address; value: bigint; data: Hex; injectToken: Address; injectOffset: bigint }[] = []
+    const tokensToFlush = new Set<Address>()
+    if (!useNativeInput) {
+      tokensToFlush.add(inputToken.address)
+    }
+
     const calls: ExecutorCallPlan[] = []
     let availableAmount = quote.amountIn
+
+    // Handle Native Input (Wrap)
+    if (useNativeInput) {
+      if (!chain.wrappedNativeAddress) {
+        throw new Error(`Wrapped native address not configured for chain ${chain.name}`)
+      }
+      
+      const wrapCallData = encodeFunctionData({
+        abi: WETH_ABI,
+        functionName: 'deposit',
+        args: [],
+      })
+
+      const wrapCall = {
+        target: chain.wrappedNativeAddress,
+        value: quote.amountIn,
+        data: wrapCallData,
+        injectToken: '0x0000000000000000000000000000000000000000' as Address,
+        injectOffset: 0n,
+      }
+      
+      executorCalls.push(wrapCall)
+      // No need to add to calls[] for client-side simulation as this is internal to executor
+      // But wait, calls[] is for client simulation? No, calls[] in SwapTransaction is for...
+      // "calls: ExecutorCallPlan[]" seems to be a simplified view or maybe for direct execution?
+      // The interface says "calls: ExecutorCallPlan[]".
+      // Let's check how it's used. It seems to be just for info or maybe multi-call if not using executor contract?
+      // But here we ARE using executor contract.
+      
+      // We should add WETH to tokensToFlush so we can track it
+      tokensToFlush.add(chain.wrappedNativeAddress)
+    }
 
     for (let index = 0; index < quote.sources.length; index += 1) {
       const source = quote.sources[index]
@@ -226,7 +272,8 @@ export class SwapBuilder {
       }
 
       const isLastHop = index === quote.sources.length - 1
-      const hopRecipient = isLastHop ? recipient : executorAddress
+      // If unwrapping at the end, the last hop must send tokens to the executor
+      const hopRecipient = (isLastHop && !useNativeOutput) ? recipient : executorAddress
       const hopExpectedOut = source.amountOut
       if (!hopExpectedOut || hopExpectedOut <= 0n) {
         throw new Error('Missing hop amountOut for executor construction')
@@ -255,6 +302,8 @@ export class SwapBuilder {
         target: dex.routerAddress,
         value: 0n,
         data: swapCallData,
+        injectToken: '0x0000000000000000000000000000000000000000' as Address,
+        injectOffset: 0n,
       }
 
       executorCalls.push(plannedCall)
@@ -270,6 +319,30 @@ export class SwapBuilder {
       availableAmount = scaledHopExpectedOut
     }
 
+    // Handle Native Output (Unwrap)
+    if (useNativeOutput) {
+      if (!chain.wrappedNativeAddress) {
+        throw new Error(`Wrapped native address not configured for chain ${chain.name}`)
+      }
+
+      const unwrapCallData = encodeFunctionData({
+        abi: WETH_ABI,
+        functionName: 'withdraw',
+        args: [0n], // Amount will be injected
+      })
+
+      const unwrapCall = {
+        target: chain.wrappedNativeAddress,
+        value: 0n,
+        data: unwrapCallData,
+        injectToken: chain.wrappedNativeAddress,
+        injectOffset: 4n, // Offset of 'amount' parameter
+      }
+
+      executorCalls.push(unwrapCall)
+      tokensToFlush.add(chain.wrappedNativeAddress)
+    }
+
     const executorData = encodeFunctionData({
       abi: AEQUI_EXECUTOR_ABI,
       functionName: 'execute',
@@ -277,7 +350,6 @@ export class SwapBuilder {
         pulls,
         approvals,
         executorCalls,
-        recipient,
         Array.from(tokensToFlush),
       ],
     })

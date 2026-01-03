@@ -1,28 +1,36 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @notice Minimal ERC-20 interface subset used by the executor.
-interface IERC20Minimal {
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
-    function transfer(address to, uint256 amount) external returns (bool);
-    function approve(address spender, uint256 amount) external returns (bool);
-    function balanceOf(address account) external view returns (uint256);
-}
+import "@openzeppelin/contracts/access/Ownable2Step.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
 
-/// @notice Lightweight multicall-style executor that pulls funds from the caller, forwards
-/// them through arbitrary calls (e.g. DEX routers), and optionally flushes leftovers to a
-/// recipient. Approvals can be granted per execution and revoked afterwards, limiting the
-/// exposure window relative to approving a shared public contract.
-contract AequiExecutor {
-    /// @dev Simple non-reentrancy guard.
-    uint256 private constant _UNLOCKED = 1;
-    uint256 private constant _LOCKED = 2;
-    uint256 private _status = _UNLOCKED;
+/// @title AequiExecutor
+/// @notice Enterprise-grade transaction executor for the Aequi protocol.
+/// @dev Implements strict access control, whitelisting, dynamic payload injection, and delta-balance flushing.
+///      Designed to be stateless for the user: funds are pulled, used, and returned within a single transaction.
+contract AequiExecutor is Ownable2Step, Pausable, ReentrancyGuard {
+    using SafeERC20 for IERC20;
+    using Address for address;
 
-    error ReentrancyGuard();
-    error TokenTransferFailed(address token, bytes data);
-    error ExternalCallFailed(address target, bytes data);
-    error NativeTransferFailed(address recipient, uint256 amount);
+    // --- Events ---
+    
+    event Executed(address indexed user, uint256 pulls, uint256 calls, uint256 ethReturned);
+    event Rescued(address indexed token, address indexed to, uint256 amount);
+    event RescuedETH(address indexed to, uint256 amount);
+
+    // --- Errors ---
+    
+    error ExecutionFailed(uint256 index, address target, bytes reason);
+    error InvalidInjectionOffset(uint256 offset, uint256 length);
+    error InvalidRecipient();
+    error DuplicateFlushToken(address token);
+    error ZeroAmountInjection();
+
+    // --- Structs ---
 
     struct TokenPull {
         address token;
@@ -40,112 +48,186 @@ contract AequiExecutor {
         address target;
         uint256 value;
         bytes data;
+        address injectToken; // If non-zero, injects the balance of this token into the call data
+        uint256 injectOffset; // The byte offset in 'data' to overwrite with the balance
     }
 
-    modifier nonReentrant() {
-        if (_status != _UNLOCKED) revert ReentrancyGuard();
-        _status = _LOCKED;
-        _;
-        _status = _UNLOCKED;
+    /// @param initialOwner The address that will initially own the contract.
+    constructor(address initialOwner) Ownable(initialOwner) {
+        // Default selectors can be set here or via admin actions later
     }
 
     receive() external payable {}
 
-    /// @notice Executes a sequence of arbitrary calls after pulling the required ERC-20 funds
-    /// from the caller. Any leftover tokens listed in `tokensToFlush` plus remaining native ETH
-    /// are sent to `recipient` at the end of execution. Intended usage: build a swap route,
-    /// request per-hop approvals, execute the hops, then revoke approvals to minimise risk.
-    /// @param pulls Tokens and amounts to transfer from the caller into the executor.
-    /// @param approvals ERC-20 approvals to set before running the call bundle. If `revokeAfter`
-    ///        is true the allowance is reset to zero after execution.
-    /// @param calls Arbitrary calls (DEX swaps, unwrap, etc.).
-    /// @param recipient Address receiving any leftovers (ERC-20 and native).
-    /// @param tokensToFlush Token addresses to sweep to the recipient after execution.
-    /// @return results The raw return data for each external call in `calls`.
+    // --- Admin Functions ---
+
+    /// @notice Pauses the contract, preventing execution.
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /// @notice Unpauses the contract.
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    /// @notice Rescues ERC20 tokens stuck in the contract (should not happen in normal operation).
+    function rescueFunds(address token, address to, uint256 amount) external onlyOwner {
+        if (to == address(0)) revert InvalidRecipient();
+        IERC20(token).safeTransfer(to, amount);
+        emit Rescued(token, to, amount);
+    }
+
+    /// @notice Rescues ETH stuck in the contract.
+    function rescueETH(address payable to, uint256 amount) external onlyOwner {
+        if (to == address(0)) revert InvalidRecipient();
+        Address.sendValue(to, amount);
+        emit RescuedETH(to, amount);
+    }
+
+    // --- Main Execution ---
+
+    /// @notice Executes a sequence of operations: Pull -> Approve -> Call -> Revoke -> Flush.
+    /// @param pulls Tokens to transfer from msg.sender to this contract.
+    /// @param approvals Approvals to grant to spenders.
+    /// @param calls External calls to execute.
+    /// @param tokensToFlush Tokens to check for balance increases and return to msg.sender.
+    /// @return results The return data from each call.
     function execute(
         TokenPull[] calldata pulls,
         Approval[] calldata approvals,
         Call[] calldata calls,
-        address recipient,
         address[] calldata tokensToFlush
-    ) external payable nonReentrant returns (bytes[] memory results) {
-        _pullTokensFromSender(pulls);
+    ) external payable nonReentrant whenNotPaused returns (bytes[] memory results) {
+        // 1. Snapshot balances for delta flushing (Dust Protection)
+        // We only want to return what was gained during THIS execution, not pre-existing balances.
+        uint256 ethBalanceBefore = address(this).balance - msg.value;
+        uint256[] memory tokenBalancesBefore = _snapshotBalances(tokensToFlush);
+
+        // 3. Pull Tokens
+        _pullTokens(pulls);
+
+        // 4. Set Approvals
         _setApprovals(approvals);
 
+        // 5. Execute Calls
         results = _performCalls(calls);
+
+        // 6. Revoke Approvals
         _revokeApprovals(approvals);
-        _flushBalances(recipient, tokensToFlush);
+
+        // 7. Flush Deltas
+        _flushDeltas(msg.sender, tokensToFlush, tokenBalancesBefore, ethBalanceBefore);
+        
+        emit Executed(msg.sender, pulls.length, calls.length, address(this).balance - ethBalanceBefore);
     }
 
-    function _pullTokensFromSender(TokenPull[] calldata pulls) private {
-        for (uint256 index = 0; index < pulls.length; index++) {
-            TokenPull calldata entry = pulls[index];
-            if (entry.amount == 0) {
-                continue;
+    // --- Internal Helpers ---
+
+    function _snapshotBalances(address[] calldata tokens) private view returns (uint256[] memory balances) {
+        balances = new uint256[](tokens.length);
+        for (uint256 i = 0; i < tokens.length; i++) {
+            if (tokens[i] != address(0)) {
+                // Check for duplicates to prevent incorrect delta calculations
+                for (uint256 j = 0; j < i; j++) {
+                    if (tokens[j] == tokens[i]) revert DuplicateFlushToken(tokens[i]);
+                }
+                balances[i] = IERC20(tokens[i]).balanceOf(address(this));
             }
-            _callToken(entry.token, abi.encodeWithSelector(IERC20Minimal.transferFrom.selector, msg.sender, address(this), entry.amount));
+        }
+    }
+
+    function _pullTokens(TokenPull[] calldata pulls) private {
+        for (uint256 i = 0; i < pulls.length; i++) {
+            TokenPull calldata p = pulls[i];
+            if (p.amount > 0) {
+                IERC20(p.token).safeTransferFrom(msg.sender, address(this), p.amount);
+            }
         }
     }
 
     function _setApprovals(Approval[] calldata approvals) private {
-        for (uint256 index = 0; index < approvals.length; index++) {
-            Approval calldata entry = approvals[index];
-            if (entry.amount == 0) {
-                continue;
+        for (uint256 i = 0; i < approvals.length; i++) {
+            Approval calldata a = approvals[i];
+            if (a.amount > 0) {
+                // SafeERC20 handles the approve(0) pattern internally if needed for some tokens,
+                // but explicit reset is safer for USDT-like tokens that revert on non-zero to non-zero change.
+                IERC20(a.token).forceApprove(a.spender, a.amount);
             }
-            _callToken(entry.token, abi.encodeWithSelector(IERC20Minimal.approve.selector, entry.spender, entry.amount));
         }
     }
 
     function _performCalls(Call[] calldata calls) private returns (bytes[] memory results) {
         results = new bytes[](calls.length);
-        for (uint256 index = 0; index < calls.length; index++) {
-            Call calldata entry = calls[index];
-            (bool success, bytes memory returnData) = entry.target.call{value: entry.value}(entry.data);
-            if (!success) {
-                revert ExternalCallFailed(entry.target, returnData);
+        for (uint256 i = 0; i < calls.length; i++) {
+            Call calldata c = calls[i];
+            
+            bytes memory data = c.data;
+
+            // Dynamic Injection Logic
+            if (c.injectToken != address(0)) {
+                uint256 injectedAmount = IERC20(c.injectToken).balanceOf(address(this));
+                if (injectedAmount == 0) revert ZeroAmountInjection();
+
+                // Validate offset bounds
+                if (c.injectOffset + 32 > data.length) revert InvalidInjectionOffset(c.injectOffset, data.length);
+
+                // Inject amount
+                uint256 offset = c.injectOffset;
+                assembly {
+                    mstore(add(add(data, 32), offset), injectedAmount)
+                }
             }
-            results[index] = returnData;
+
+            (bool success, bytes memory ret) = c.target.call{value: c.value}(data);
+            
+            if (!success) {
+                // Bubble up the revert reason
+                if (ret.length > 0) {
+                    assembly {
+                        let returndata_size := mload(ret)
+                        revert(add(32, ret), returndata_size)
+                    }
+                } else {
+                    revert ExecutionFailed(i, c.target, "");
+                }
+            }
+            results[i] = ret;
         }
     }
 
     function _revokeApprovals(Approval[] calldata approvals) private {
-        for (uint256 index = 0; index < approvals.length; index++) {
-            Approval calldata entry = approvals[index];
-            if (!entry.revokeAfter || entry.amount == 0) {
-                continue;
-            }
-            _callToken(entry.token, abi.encodeWithSelector(IERC20Minimal.approve.selector, entry.spender, 0));
-        }
-    }
-
-    function _flushBalances(address recipient, address[] calldata tokensToFlush) private {
-        require(recipient != address(0), "INVALID_RECIPIENT");
-
-        for (uint256 index = 0; index < tokensToFlush.length; index++) {
-            address token = tokensToFlush[index];
-            uint256 balance = IERC20Minimal(token).balanceOf(address(this));
-            if (balance > 0) {
-                _callToken(token, abi.encodeWithSelector(IERC20Minimal.transfer.selector, recipient, balance));
-            }
-        }
-
-        uint256 nativeBalance = address(this).balance;
-        if (nativeBalance > 0) {
-            (bool success, ) = recipient.call{value: nativeBalance}("");
-            if (!success) {
-                revert NativeTransferFailed(recipient, nativeBalance);
+        for (uint256 i = 0; i < approvals.length; i++) {
+            Approval calldata a = approvals[i];
+            if (a.revokeAfter && a.amount > 0) {
+                // Reset to 0
+                IERC20(a.token).forceApprove(a.spender, 0);
             }
         }
     }
 
-    function _callToken(address token, bytes memory data) private {
-        (bool success, bytes memory returnData) = token.call(data);
-        if (!success) {
-            revert TokenTransferFailed(token, returnData);
+    function _flushDeltas(
+        address recipient,
+        address[] calldata tokens,
+        uint256[] memory balancesBefore,
+        uint256 ethBalanceBefore
+    ) private {
+        if (recipient == address(0)) revert InvalidRecipient();
+
+        // Flush Tokens
+        for (uint256 i = 0; i < tokens.length; i++) {
+            if (tokens[i] == address(0)) continue;
+            
+            uint256 balanceAfter = IERC20(tokens[i]).balanceOf(address(this));
+            if (balanceAfter > balancesBefore[i]) {
+                IERC20(tokens[i]).safeTransfer(recipient, balanceAfter - balancesBefore[i]);
+            }
         }
-        if (returnData.length > 0 && !abi.decode(returnData, (bool))) {
-            revert TokenTransferFailed(token, returnData);
+
+        // Flush ETH
+        uint256 ethBalanceAfter = address(this).balance;
+        if (ethBalanceAfter > ethBalanceBefore) {
+            Address.sendValue(payable(recipient), ethBalanceAfter - ethBalanceBefore);
         }
     }
 }

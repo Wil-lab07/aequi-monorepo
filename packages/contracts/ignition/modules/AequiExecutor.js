@@ -1,7 +1,8 @@
 const { buildModule } = require("@nomicfoundation/hardhat-ignition/modules");
 
 module.exports = buildModule("AequiExecutorModule", (m) => {
-  const aequiExecutor = m.contract("AequiExecutor");
+  const deployer = m.getAccount(0);
+  const aequiExecutor = m.contract("AequiExecutor", [deployer]);
 
   return { aequiExecutor };
 });

@@ -21,6 +21,7 @@ export interface ChainConfig {
   id: number
   name: string
   nativeCurrencySymbol: string
+  wrappedNativeAddress: Address
   rpcUrls: string[]
   fallbackRpcUrls?: string[]
   viemChain: Chain
