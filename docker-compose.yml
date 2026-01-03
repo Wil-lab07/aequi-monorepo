@@ -15,7 +15,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.aequi-api.rule=Host(`${API_DOMAIN:-api.yourdomain.com}`)"
       - "traefik.http.routers.aequi-api.entrypoints=websecure"
-      - "traefik.http.routers.aequi-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.aequi-api.tls=true"
       - "traefik.http.services.aequi-api.loadbalancer.server.port=3000"
 
   web:
@@ -37,7 +37,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.aequi-web.rule=Host(`${WEB_DOMAIN:-yourdomain.com}`)"
       - "traefik.http.routers.aequi-web.entrypoints=websecure"
-      - "traefik.http.routers.aequi-web.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.aequi-web.tls=true"
       - "traefik.http.services.aequi-web.loadbalancer.server.port=80"
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
