@@ -230,10 +230,15 @@ export class SwapBuilder {
         isLastHop,
       )
 
+      const isIntermediateHop = index > 0
+      const approvalAmount = isIntermediateHop
+        ? BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff') // max uint256
+        : hopAmountIn // exact amount for first hop
+
       approvals.push({
         token: tokenIn.address,
         spender: dex.routerAddress,
-        amount: hopAmountIn,
+        amount: approvalAmount,
         revokeAfter: true,
       })
 
