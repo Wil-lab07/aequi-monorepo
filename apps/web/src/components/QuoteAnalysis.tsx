@@ -111,16 +111,44 @@ export function QuoteAnalysis({ quote, tokenA, tokenB }: QuoteAnalysisProps) {
           <div className="card-label">Route Comparison</div>
           <div className="offers-table">
             <div className="offers-header">
-              <span>Route</span>
-              <span>Output</span>
-              <span>Gas</span>
+              <div>Route</div>
+              <div>Fee</div>
+              <div>Output</div>
+              <div>Price Impact</div>
+              <div>Liquidity</div>
+              <div>Gas</div>
+              <div>Status</div>
             </div>
             {quote.offers.slice(0, 5).map((offer, idx) => {
                const isBest = idx === 0;
                const offerAmount = Number(offer.amountOut) / 10 ** tokenB.decimals;
+               const bestAmount = Number(quote.offers[0].amountOut) / 10 ** tokenB.decimals;
                const offerGas = offer.estimatedGasCostWei 
                  ? (Number(offer.estimatedGasCostWei) / 10 ** 18).toFixed(5) 
                  : '-';
+               const offerImpact = offer.priceImpactBps / 100;
+               const impactColor = offerImpact > 5 ? 'var(--danger-color)' : offerImpact > 1 ? '#e6a23c' : 'var(--accent-color)';
+               const liquidity = (Number(offer.liquidityScore) / 1e18).toLocaleString(undefined, { maximumFractionDigits: 0 });
+               
+               // Calculate average fee
+               const avgFee = offer.pools.length > 0 
+                 ? offer.pools.reduce((sum, p) => sum + (p.feeTier || 0), 0) / offer.pools.length / 10000
+                 : 0;
+               
+               // Determine why not selected
+               let reason = '';
+               if (!isBest) {
+                 const outputDiff = ((bestAmount - offerAmount) / bestAmount * 100);
+                 if (outputDiff > 0.5) {
+                   reason = `${outputDiff.toFixed(2)}% lower output`;
+                 } else if (offerImpact > quote.priceImpactBps / 100) {
+                   reason = 'Higher price impact';
+                 } else if (Number(offer.liquidityScore) < Number(quote.offers[0].liquidityScore)) {
+                   reason = 'Lower liquidity';
+                 } else {
+                   reason = 'Higher gas cost';
+                 }
+               }
                
                return (
                  <div key={idx} className={`offer-row ${isBest ? 'best-offer' : ''}`}>
@@ -134,12 +162,29 @@ export function QuoteAnalysis({ quote, tokenA, tokenB }: QuoteAnalysisProps) {
                      </div>
                      <span className="offer-hops">{offer.hopVersions.length} Hop{offer.hopVersions.length > 1 ? 's' : ''}</span>
                    </div>
+                   <div className="offer-fee-col">
+                     {avgFee > 0 ? `${avgFee.toFixed(2)}%` : '-'}
+                   </div>
                    <div className="offer-amount-col">
                      <span className="offer-val">{offerAmount.toFixed(4)}</span>
-                     {isBest && <span className="best-badge-mini">Best</span>}
+                   </div>
+                   <div className="offer-impact-col">
+                     <span className="offer-val" style={{ color: impactColor }}>
+                       {offerImpact.toFixed(2)}%
+                     </span>
+                   </div>
+                   <div className="offer-liquidity-col">
+                     <span className="offer-val">{liquidity}</span>
                    </div>
                    <div className="offer-gas-col">
                      {offerGas}
+                   </div>
+                   <div className="offer-status-col">
+                     {isBest ? (
+                       <span className="best-badge-mini">✓ Selected</span>
+                     ) : (
+                       <span className="reason-text">{reason}</span>
+                     )}
                    </div>
                  </div>
                )

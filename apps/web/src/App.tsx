@@ -6,6 +6,8 @@ import {
   useDisconnect,
   useSendTransaction,
   useSwitchChain,
+  useReadContract,
+  useBalance,
 } from 'wagmi'
 import { waitForTransactionReceipt } from 'wagmi/actions'
 import type {
@@ -29,6 +31,7 @@ import { tokenManager } from './services/token-manager'
 import type { Token } from './services/token-manager'
 import { QuoteAnalysis } from './components/QuoteAnalysis'
 import { SettingsModal } from './components/SettingsModal'
+import { SwapConfirmModal } from './components/SwapConfirmModal'
 import { getTokenLogo } from './utils/logos'
 
 type RoutePreference = 'auto' | 'v2' | 'v3'
@@ -67,6 +70,7 @@ function App() {
   // Token Management
   const [tokenModalOpen, setTokenModalOpen] = useState(false)
   const [settingsModalOpen, setSettingsModalOpen] = useState(false)
+  const [swapConfirmModalOpen, setSwapConfirmModalOpen] = useState(false)
   const [selectingToken, setSelectingToken] = useState<'A' | 'B' | null>(null)
   const [importedTokens, setImportedTokens] = useState<Token[]>([])
 
@@ -246,6 +250,90 @@ function App() {
     () => chainOptions.find((option) => option.key === selectedChain)?.label ?? selectedChain,
     [selectedChain],
   )
+
+  // Token Balance Hooks
+  const { data: nativeBalance } = useBalance({
+    address: address,
+    chainId: selectedChainId,
+  })
+
+  const isNativeTokenA = quoteForm.tokenA?.address === '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
+  const isNativeTokenB = quoteForm.tokenB?.address === '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
+
+  const { data: tokenABalance } = useReadContract({
+    address: quoteForm.tokenA && !isNativeTokenA ? quoteForm.tokenA.address as `0x${string}` : undefined,
+    abi: [
+      {
+        name: 'balanceOf',
+        type: 'function',
+        stateMutability: 'view',
+        inputs: [{ name: 'account', type: 'address' }],
+        outputs: [{ name: 'balance', type: 'uint256' }],
+      },
+    ],
+    functionName: 'balanceOf',
+    args: address ? [address] : undefined,
+    chainId: selectedChainId,
+    query: {
+      enabled: !!address && !!quoteForm.tokenA && !isNativeTokenA,
+    },
+  })
+
+  const { data: tokenBBalance } = useReadContract({
+    address: quoteForm.tokenB && !isNativeTokenB ? quoteForm.tokenB.address as `0x${string}` : undefined,
+    abi: [
+      {
+        name: 'balanceOf',
+        type: 'function',
+        stateMutability: 'view',
+        inputs: [{ name: 'account', type: 'address' }],
+        outputs: [{ name: 'balance', type: 'uint256' }],
+      },
+    ],
+    functionName: 'balanceOf',
+    args: address ? [address] : undefined,
+    chainId: selectedChainId,
+    query: {
+      enabled: !!address && !!quoteForm.tokenB && !isNativeTokenB,
+    },
+  })
+
+  const balanceA = useMemo(() => {
+    if (!quoteForm.tokenA) return 0n
+    if (isNativeTokenA) return nativeBalance?.value ?? 0n
+    return tokenABalance as bigint ?? 0n
+  }, [quoteForm.tokenA, isNativeTokenA, nativeBalance, tokenABalance])
+
+  const balanceB = useMemo(() => {
+    if (!quoteForm.tokenB) return 0n
+    if (isNativeTokenB) return nativeBalance?.value ?? 0n
+    return tokenBBalance as bigint ?? 0n
+  }, [quoteForm.tokenB, isNativeTokenB, nativeBalance, tokenBBalance])
+
+  const formattedBalanceA = useMemo(() => {
+    if (!quoteForm.tokenA) return '0'
+    return (Number(balanceA) / 10 ** quoteForm.tokenA.decimals).toFixed(6)
+  }, [balanceA, quoteForm.tokenA])
+
+  const formattedBalanceB = useMemo(() => {
+    if (!quoteForm.tokenB) return '0'
+    return (Number(balanceB) / 10 ** quoteForm.tokenB.decimals).toFixed(6)
+  }, [balanceB, quoteForm.tokenB])
+
+  const handleSetMaxAmount = useCallback(() => {
+    if (!quoteForm.tokenA) return
+    const maxAmount = Number(balanceA) / 10 ** quoteForm.tokenA.decimals
+    // For native tokens, leave a bit for gas
+    const amountToSet = isNativeTokenA ? Math.max(0, maxAmount - 0.01) : maxAmount
+    setQuoteForm(prev => ({ ...prev, amount: amountToSet.toString() }))
+  }, [balanceA, quoteForm.tokenA, isNativeTokenA])
+
+  const handleSetHalfAmount = useCallback(() => {
+    if (!quoteForm.tokenA) return
+    const maxAmount = Number(balanceA) / 10 ** quoteForm.tokenA.decimals
+    const halfAmount = maxAmount / 2
+    setQuoteForm(prev => ({ ...prev, amount: halfAmount.toString() }))
+  }, [balanceA, quoteForm.tokenA])
 
   // Pre-load exchange directory for debug/info purposes
   useEffect(() => {
@@ -448,11 +536,8 @@ function App() {
 
     setPrepareLoading(true)
     setPrepareError(null)
-    setApprovalError(null)
-    setSwapExecutionError(null)
 
     try {
-      // Step 1: Prepare transaction
       const payload = {
         chain: selectedChain,
         tokenA,
@@ -467,21 +552,38 @@ function App() {
       const swapData = await requestSwapTransaction(payload)
       setPreparedSwap(swapData)
       recordDebug('swap', { request: payload, response: swapData })
+      setPrepareLoading(false)
+      
+      // Open modal with swap data
+      setSwapConfirmModalOpen(true)
+    } catch (error) {
+      const message = resolveApiErrorMessage(error)
+      setPrepareError(message)
+      setPrepareLoading(false)
+    }
+  }, [address, chainMismatch, quoteResult, quoteForm, selectedChain, isConnected, forceMultiHop, recordDebug])
 
-      const inputToken = swapData.tokens[0]?.address
+  const onConfirmSwap = useCallback(async () => {
+    if (!preparedSwap) return
+
+    setApprovalError(null)
+    setSwapExecutionError(null)
+
+    try {
+      const inputToken = preparedSwap.tokens[0]?.address
       if (!inputToken) {
         throw new Error('Input token metadata unavailable')
       }
 
-      // Step 2: Check allowance
-      const allowanceData = await refreshAllowance(inputToken, swapData.transaction.spender, { silent: true })
+      // Check allowance
+      const allowanceData = await refreshAllowance(inputToken, preparedSwap.transaction.spender, { silent: true })
       let needsApproval = true
 
       if (allowanceData) {
         const entry = allowanceData.allowances.find((item) => item.token.toLowerCase() === inputToken.toLowerCase())
         if (entry) {
           try {
-            if (BigInt(entry.allowance) >= BigInt(swapData.transaction.amountIn)) {
+            if (BigInt(entry.allowance) >= BigInt(preparedSwap.transaction.amountIn)) {
               needsApproval = false
             }
           } catch {
@@ -490,15 +592,13 @@ function App() {
         }
       }
 
-      setPrepareLoading(false)
-
-      // Step 3: Approve if needed
+      // Approve if needed
       if (needsApproval) {
         setApprovalLoading('infinite')
         const approvalPayload = {
           chain: selectedChain,
           token: inputToken,
-          spender: swapData.transaction.spender,
+          spender: preparedSwap.transaction.spender,
           infinite: true,
         }
         const approvalData = await requestApproveCalldata(approvalPayload)
@@ -524,25 +624,24 @@ function App() {
         setLastApprovalHash(approvalTxHash)
         setApprovalLoading(null)
 
-        // Wait for allowance to sync
         await ensureAllowanceSynced()
       }
 
-      // Step 4: Execute swap
+      // Execute swap
       setSwapExecutionLoading(true)
-      if (!swapData.transaction.call) {
+      if (!preparedSwap.transaction.call) {
         throw new Error('Missing transaction payload')
       }
       
-      const gasLimit = swapData.transaction.estimatedGas 
-        ? BigInt(swapData.transaction.estimatedGas)
+      const gasLimit = preparedSwap.transaction.estimatedGas 
+        ? BigInt(preparedSwap.transaction.estimatedGas)
         : undefined
       
       const swapTxHash = await sendTransactionAsync({
         chainId: selectedChainId,
-        to: swapData.transaction.call.to as `0x${string}`,
-        data: swapData.transaction.call.data as `0x${string}`,
-        value: BigInt(swapData.transaction.call.value ?? '0'),
+        to: preparedSwap.transaction.call.to as `0x${string}`,
+        data: preparedSwap.transaction.call.data as `0x${string}`,
+        value: BigInt(preparedSwap.transaction.call.value ?? '0'),
         gas: gasLimit,
       })
       setSwapHash(swapTxHash)
@@ -553,11 +652,11 @@ function App() {
       // Clear quote after successful swap
       setQuoteResult(null)
       setQuoteForm((prev) => ({ ...prev, amount: '' }))
+      setSwapConfirmModalOpen(false)
+      setPreparedSwap(null)
     } catch (error) {
       const message = resolveApiErrorMessage(error)
-      if (prepareLoading) {
-        setPrepareError(message)
-      } else if (approvalLoading) {
+      if (approvalLoading) {
         setApprovalError(message)
       } else {
         setSwapExecutionError(message)
@@ -565,11 +664,10 @@ function App() {
       setApprovalHash(null)
       setSwapHash(null)
     } finally {
-      setPrepareLoading(false)
       setApprovalLoading(null)
       setSwapExecutionLoading(false)
     }
-  }, [address, chainMismatch, quoteForm, quoteResult, recordDebug, refreshAllowance, selectedChain, selectedChainId, sendTransactionAsync, ensureAllowanceSynced, isConnected, forceMultiHop])
+  }, [preparedSwap, refreshAllowance, selectedChain, selectedChainId, sendTransactionAsync, ensureAllowanceSynced, recordDebug, approvalLoading])
 
   return (
     <div className="app">
@@ -577,19 +675,7 @@ function App() {
         <div className="navbar-content">
           <div className="navbar-brand">
             <h1 className="brand-title">Aequi</h1>
-            <span className="brand-subtitle">DEX Aggregator</span>
-          </div>
-
-          <div className="navbar-tabs">
-            {tabs.map((tab) => (
-              <button
-                key={tab.key}
-                className={`nav-tab ${activeTab === tab.key ? 'nav-tab-active' : ''}`}
-                onClick={() => setActiveTab(tab.key)}
-              >
-                {tab.label}
-              </button>
-            ))}
+            <span className="brand-subtitle">Aggregator</span>
           </div>
 
           <div className="navbar-actions">
@@ -666,7 +752,11 @@ function App() {
                   <div className="token-row">
                     <div className="token-row-header">
                       <span className="token-row-label">Sell</span>
-                      <span className="token-row-hint">{selectedChainLabel}</span>
+                      <div className="token-row-balance">
+                        {isConnected && quoteForm.tokenA && (
+                          <span className="balance-text">Balance: {formattedBalanceA} {quoteForm.tokenA.symbol}</span>
+                        )}
+                      </div>
                     </div>
                     <div className="token-row-main">
                       <button
@@ -694,6 +784,22 @@ function App() {
                         onChange={(e) => setQuoteForm(prev => ({ ...prev, amount: e.target.value }))}
                       />
                     </div>
+                    <div className="token-row-actions">
+                      <button 
+                        className="quick-amount-btn"
+                        onClick={handleSetHalfAmount}
+                        disabled={!isConnected || !quoteForm.tokenA || balanceA === 0n}
+                      >
+                        Half
+                      </button>
+                      <button 
+                        className="quick-amount-btn"
+                        onClick={handleSetMaxAmount}
+                        disabled={!isConnected || !quoteForm.tokenA || balanceA === 0n}
+                      >
+                        Max
+                      </button>
+                    </div>
                   </div>
 
                   <div className="swap-toggle">
@@ -707,6 +813,11 @@ function App() {
                   <div className="token-row">
                     <div className="token-row-header">
                       <span className="token-row-label">Buy</span>
+                      <div className="token-row-balance">
+                        {isConnected && quoteForm.tokenB && (
+                          <span className="balance-text">Balance: {formattedBalanceB} {quoteForm.tokenB.symbol}</span>
+                        )}
+                      </div>
                     </div>
                     <div className="token-row-main">
                       <button
@@ -856,6 +967,16 @@ function App() {
         setDeadlineSeconds={(val) => setQuoteForm(prev => ({ ...prev, deadlineSeconds: val }))}
         version={quoteForm.version}
         setVersion={(val) => setQuoteForm(prev => ({ ...prev, version: val }))}
+      />
+
+      <SwapConfirmModal
+        isOpen={swapConfirmModalOpen}
+        onClose={() => setSwapConfirmModalOpen(false)}
+        onConfirm={onConfirmSwap}
+        swapData={preparedSwap}
+        loading={!!approvalLoading || swapExecutionLoading}
+        error={approvalError || swapExecutionError}
+        chain={selectedChainLabel}
       />
     </div>
   )
