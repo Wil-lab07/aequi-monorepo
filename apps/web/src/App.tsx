@@ -280,7 +280,7 @@ function App() {
           amount,
           slippageBps: quoteForm.slippageBps.trim() || undefined,
           version: quoteForm.version,
-          forceMultiHop: forceMultiHop ? 'true' : undefined,
+          forceMultiHop: forceMultiHop ? ('true' as const) : undefined,
         }
         const data = await fetchSwapQuote(params)
         setQuoteResult(data)
