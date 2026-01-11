@@ -119,7 +119,7 @@ export function QuoteAnalysis({ quote, tokenA, tokenB }: QuoteAnalysisProps) {
               <div>Gas</div>
               <div>Status</div>
             </div>
-            {quote.offers.slice(0, 5).map((offer, idx) => {
+            {quote.offers.map((offer, idx) => {
                const isBest = idx === 0;
                const offerAmount = Number(offer.amountOut) / 10 ** tokenB.decimals;
                const bestAmount = Number(quote.offers![0]!.amountOut) / 10 ** tokenB.decimals;
