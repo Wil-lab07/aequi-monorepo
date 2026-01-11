@@ -36,7 +36,6 @@ import { getTokenLogo } from './utils/logos'
 
 type RoutePreference = 'auto' | 'v2' | 'v3'
 type DebugKey = 'exchange' | 'token' | 'price' | 'quote' | 'allowance' | 'approve' | 'swap'
-type TabKey = 'swap' | 'price'
 type SupportedChainId = typeof CHAIN_BY_KEY.ethereum.id | typeof CHAIN_BY_KEY.bsc.id
 
 interface DebugEntry {
@@ -723,8 +722,7 @@ function App() {
       </nav>
 
       <div className="app-shell">
-          {activeTab === 'swap' && (
-            <section className="swap-panel">
+        <section className="swap-panel">
               {/* LEFT PANEL - Token Selection & Input */}
               <div className="swap-card">
                 <div className="panel-header">
@@ -943,7 +941,6 @@ function App() {
                 )}
               </div>
             </section>
-          )}
       </div>
 
       <TokenModal
