@@ -1,10 +1,42 @@
-import { mainnet, bsc as bscChain } from 'viem/chains'
+import { mainnet, bsc as bscChain, sepolia } from 'viem/chains'
 import type { ChainConfig, ChainKey } from '../types'
 import { FeeAmount as PancakeFeeAmount } from '@pancakeswap/v3-sdk'
 import { FeeAmount } from '@uniswap/v3-sdk'
 import { appConfig } from './app-config'
 
 export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
+    sepolia: {
+        key: 'sepolia',
+        id: sepolia.id,
+        name: 'Ethereum Sepolia',
+        nativeCurrencySymbol: sepolia.nativeCurrency.symbol,
+        wrappedNativeAddress: '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14', // WETH on Sepolia (Uniswap V3)
+        rpcUrls: appConfig.rpc.sepolia.length ? appConfig.rpc.sepolia : Array.from(sepolia.rpcUrls.default.http),
+        fallbackRpcUrls: appConfig.rpc.sepoliaFallback,
+        disablePublicRpcRegistry: appConfig.rpc.sepolia.length > 0,
+        viemChain: sepolia,
+        dexes: [
+            {
+                id: 'uniswap-v2',
+                label: 'Uniswap V2',
+                protocol: 'uniswap',
+                version: 'v2',
+                factoryAddress: '0xF62c03E08ada871A0bEb309762E260a7a6a880E6',
+                routerAddress: '0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3',
+            },
+            {
+                id: 'uniswap-v3',
+                label: 'Uniswap V3',
+                protocol: 'uniswap',
+                version: 'v3',
+                factoryAddress: '0x0227628f3F023bb0B980b67D528571c95c6DaC1c',
+                routerAddress: '0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E', // SwapRouter02
+                quoterAddress: '0xEd1f6473345F45b75F8179591dd5bA1888cf2FB3', // QuoterV2
+                feeTiers: [FeeAmount.LOWEST, FeeAmount.LOW, FeeAmount.MEDIUM, FeeAmount.HIGH],
+                useRouter02: true,
+            },
+        ],
+    },
     ethereum: {
         key: 'ethereum',
         id: mainnet.id,

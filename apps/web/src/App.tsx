@@ -36,7 +36,7 @@ import { getTokenLogo } from './utils/logos'
 
 type RoutePreference = 'auto' | 'v2' | 'v3'
 type DebugKey = 'exchange' | 'token' | 'price' | 'quote' | 'allowance' | 'approve' | 'swap'
-type SupportedChainId = typeof CHAIN_BY_KEY.ethereum.id | typeof CHAIN_BY_KEY.bsc.id
+type SupportedChainId = typeof CHAIN_BY_KEY.ethereum.id | typeof CHAIN_BY_KEY.bsc.id | typeof CHAIN_BY_KEY.sepolia.id
 
 interface DebugEntry {
   request: unknown
@@ -48,11 +48,13 @@ interface DebugEntry {
 const chainOptions: Array<{ key: ChainKey; label: string }> = [
   { key: 'ethereum', label: 'Ethereum' },
   { key: 'bsc', label: 'BNB Smart Chain' },
+  { key: 'sepolia', label: 'Ethereum Sepolia' },
 ]
 
 const CHAIN_ID_BY_KEY: Record<ChainKey, SupportedChainId> = {
   ethereum: CHAIN_BY_KEY.ethereum.id,
   bsc: CHAIN_BY_KEY.bsc.id,
+  sepolia: CHAIN_BY_KEY.sepolia.id,
 }
 
 const shorten = (value: string) => (value.length > 12 ? `${value.slice(0, 6)}…${value.slice(-4)}` : value)

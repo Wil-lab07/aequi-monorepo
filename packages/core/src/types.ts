@@ -1,6 +1,6 @@
 import type { Address, Chain } from 'viem'
 
-export type ChainKey = 'ethereum' | 'bsc'
+export type ChainKey = 'ethereum' | 'bsc' | 'sepolia'
 
 export type RouteHopVersion = 'v2' | 'v3'
 export type RoutePreference = 'auto' | RouteHopVersion

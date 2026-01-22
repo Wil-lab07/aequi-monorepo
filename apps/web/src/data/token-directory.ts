@@ -7,6 +7,23 @@ export interface TokenPreset {
 }
 
 export const tokenDirectory: Record<ChainKey, TokenPreset[]> = {
+  sepolia: [
+    {
+      address: '0xEeeeeEeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+      symbol: 'ETH',
+      label: 'ETH · Sepolia Ether',
+    },
+    {
+      address: '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14',
+      symbol: 'WETH',
+      label: 'WETH · Wrapped Ether',
+    },
+    {
+      address: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
+      symbol: 'USDC',
+      label: 'USDC · USD Coin',
+    },
+  ],
   ethereum: [
     {
       address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',

@@ -66,6 +66,8 @@ export const appConfig = {
   rpc: {
     ethereum: parseUrlList(process.env.RPC_URL_ETH),
     ethereumFallback: parseUrlList(process.env.RPC_URL_ETH_FALLBACK),
+    sepolia: parseUrlList(process.env.SEPOLIA_RPC_URL),
+    sepoliaFallback: parseUrlList([process.env.SEPOLIA_RPC_URL_2, process.env.SEPOLIA_RPC_URL_3].filter(Boolean).join(',')),
     bsc: parseUrlList(process.env.BSC_RPC_URL),
     bscFallback: parseUrlList(process.env.BSC_RPC_URL_FALLBACK),
   },
