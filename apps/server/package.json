@@ -6,6 +6,7 @@
   "private": true,
   "scripts": {
     "dev": "bun run --watch index.ts",
+    "dev:no-tui": "nodemon --watch src --ext ts --exec bun run index.ts",
     "start": "bun run src/index.ts",
     "check-types": "tsc --noEmit",
     "lint": "echo 'Lint not configured yet'"
@@ -16,6 +17,7 @@
     "@types/node": "^22.9.0",
     "@types/supertest": "^6.0.3",
     "@vitest/ui": "^4.0.16",
+    "nodemon": "^3.1.11",
     "supertest": "^7.2.2",
     "vitest": "^4.0.16"
   },
