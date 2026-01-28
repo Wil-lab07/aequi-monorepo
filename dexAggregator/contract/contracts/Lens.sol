@@ -171,6 +171,58 @@ contract Lens {
         data.exists = true;
     }
 
+    struct PoolRequest {
+        address token0;
+        address token1;
+    }
+
+    /**
+     * @notice Batch get V2 pools from a factory
+     * @param factory The V2 factory address
+     * @param requests Array of token pairs to check
+     * @return results Array of pool addresses (address(0) if not found)
+     */
+    function batchGetV2Pools(
+        address factory,
+        PoolRequest[] calldata requests
+    ) external view returns (address[] memory results) {
+        results = new address[](requests.length);
+        for (uint256 i = 0; i < requests.length; i++) {
+            try IUniswapV2Factory(factory).getPair(requests[i].token0, requests[i].token1) returns (address pair) {
+                results[i] = pair;
+            } catch {
+                results[i] = address(0);
+            }
+        }
+    }
+
+    /**
+     * @notice Batch get all V3 pool addresses (all fee tiers) from a factory
+     * @param factory The V3 factory address
+     * @param requests Array of token pairs to check
+     * @return results 2D array: [requestIndex][feeIndex] -> Pool Address (address(0) if not found)
+     */
+    function batchGetV3PoolsAllFees(
+        address factory,
+        PoolRequest[] calldata requests
+    ) external view returns (address[][] memory results) {
+        // Common fee tiers: 0.01% (100), 0.05% (500), 0.3% (3000), 1% (10000)
+        uint24[4] memory fees = [uint24(100), uint24(500), uint24(3000), uint24(10000)];
+        
+        results = new address[][](requests.length);
+        
+        for (uint256 i = 0; i < requests.length; i++) {
+            results[i] = new address[](4);
+            for (uint256 j = 0; j < 4; j++) {
+                try IUniswapV3Factory(factory).getPool(requests[i].token0, requests[i].token1, fees[j]) returns (address pool) {
+                    results[i][j] = pool;
+                } catch {
+                    results[i][j] = address(0);
+                }
+            }
+        }
+    }
+
     function getTokenMetadataSingle(address token) external view returns (TokenMetadata memory data) {
         data.token = token;
         data.decimals = IERC20Metadata(token).decimals();

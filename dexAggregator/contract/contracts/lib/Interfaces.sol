@@ -7,6 +7,15 @@ interface IUniswapV2Pair {
     function token1() external view returns (address);
 }
 
+// Factory Interfaces
+interface IUniswapV2Factory {
+    function getPair(address tokenA, address tokenB) external view returns (address pair);
+}
+
+interface IUniswapV3Factory {
+    function getPool(address tokenA, address tokenB, uint24 fee) external view returns (address pool);
+}
+
 interface IUniswapV3Pool {
     function slot0() external view returns (
         uint160 sqrtPriceX96,
