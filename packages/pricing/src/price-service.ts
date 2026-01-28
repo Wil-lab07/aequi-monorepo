@@ -64,6 +64,7 @@ export class PriceService {
     }
 
     const allowedVersions = resolveAllowedVersions(preference)
+    console.log(`allowedVersions: ${allowedVersions.join(', ')}`)
     const client = await this.clientProvider.getClient(chain)
 
     let gasPriceWei: bigint | null = null

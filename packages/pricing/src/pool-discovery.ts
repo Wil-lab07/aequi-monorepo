@@ -47,7 +47,12 @@ export class PoolDiscovery {
   ): Promise<PriceQuote[]> {
     console.log(`[PoolDiscovery] Fetching direct quotes for ${tokenIn.symbol} -> ${tokenOut.symbol} (Amount: ${amountIn})`)
     const factoryCalls: any[] = []
-    const dexMap: { type: 'v2' | 'v3'; dex: DexConfig; fee?: number; index: number }[] = []
+    const dexMap: {
+      type: 'v2' | 'v3';
+      dex: DexConfig;
+      fee?: number;
+      index: number
+    }[] = []
 
     chain.dexes.forEach((dex) => {
       if (!allowedVersions.includes(dex.version)) return
@@ -73,12 +78,17 @@ export class PoolDiscovery {
       }
     })
 
+    console.log(`Dex map: ${JSON.stringify(dexMap)}`)
+    console.log(`Factory calls ${JSON.stringify(factoryCalls)}`)
+
     if (factoryCalls.length === 0) return []
 
     const factoryResults = await client.multicall({
       allowFailure: true,
       contracts: factoryCalls,
     })
+
+    console.log(`Factory results: ${JSON.stringify(factoryResults)}`)
 
     const poolsByType: {
       v2Pools: { poolAddress: Address; dex: DexConfig }[]
@@ -97,6 +107,9 @@ export class PoolDiscovery {
         poolsByType.v3Pools.push({ poolAddress, dex: item.dex, fee: item.fee! })
       }
     })
+
+    console.log(`V2Pool disini ${JSON.stringify(poolsByType.v2Pools)}`)
+    console.log(`V3Pool disini ${JSON.stringify(poolsByType.v3Pools)}`)
 
     const lensAddress = AEQUI_LENS_ADDRESSES[chain.id]
     let v2PoolData: Map<Address, { reserve0: bigint; reserve1: bigint; token0: Address; success: boolean }> = new Map()
@@ -309,6 +322,11 @@ export class PoolDiscovery {
           continue
         }
 
+        console.log(`chain.id: ${chain.id}, chain.key: ${chain.key}, dex: ${item.dex.id}, tokenIn: ${tokenIn.symbol}, tokenOut: ${tokenOut.symbol}, amountIn: ${amountIn}, poolAddress: ${item.poolAddress}`)
+        console.log(`reserve0: ${poolData.reserve0}, reserve1: ${poolData.reserve1}, token0: ${poolData.token0}`)
+        console.log(`gasPriceWei: ${gasPriceWei}`)
+        console.log(`minReserveThreshold: ${this.config.minV2ReserveThreshold}`)
+
         const quote = await adapter.computeV2Quote!({
           chainId: chain.id,
           chainKey: chain.key,
@@ -408,10 +426,13 @@ export class PoolDiscovery {
     console.log(`[PoolDiscovery] Fetching multi-hop quotes for ${tokenIn.symbol} -> ${tokenOut.symbol}`)
     const intermediateAddresses = this.config.intermediateTokenAddresses[chain.key] ?? []
 
+    console.log(`intermediateAddresses: ${intermediateAddresses}`)
+
     // Filter out input/output tokens
     const validCandidates = intermediateAddresses.filter(
       (candidate) => !sameAddress(candidate, tokenIn.address) && !sameAddress(candidate, tokenOut.address)
     )
+    console.log(`validCandidates: ${validCandidates}`) // if there is a same address with tokenIn or tokenOut, it will be filtered out here
 
     if (validCandidates.length === 0) {
       return []
@@ -423,6 +444,9 @@ export class PoolDiscovery {
       chain,
       validCandidates as Address[]
     )
+
+    console.log(`Intermediate tokens ${JSON.stringify(intermediateTokens.map(t => t.symbol))}`)
+    console.log(`Intermediate token addresses: ${intermediateAddresses}`)
 
     // Fetch all legA quotes in parallel
     console.log(`[PoolDiscovery] Fetching leg A quotes for ${intermediateTokens.length} intermediates`)
@@ -448,6 +472,9 @@ export class PoolDiscovery {
           uniqueAmounts.add(legA.amountOut)
         }
       })
+
+      console.log(`Unique amounts for leg B: ${Array.from(uniqueAmounts).join(', ')}`)
+      console.log(`Unique amounts: ${uniqueAmounts}`)
 
       // For simplicity, use the first legA's amountOut or fetch multiple in parallel
       // Here we'll fetch legB quotes for each legA in parallel

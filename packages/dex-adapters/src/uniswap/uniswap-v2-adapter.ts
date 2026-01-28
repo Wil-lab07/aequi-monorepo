@@ -32,7 +32,7 @@ export class UniswapV2Adapter extends BaseDexAdapter {
     
     const reserveIn = sameAddress(token0, tokenIn.address) ? reserve0 : reserve1
     const reserveOut = sameAddress(token0, tokenIn.address) ? reserve1 : reserve0
-    
+  
     const tokenInInstance = new Token(
       chainId,
       tokenIn.address,
@@ -51,14 +51,22 @@ export class UniswapV2Adapter extends BaseDexAdapter {
     
     const reserveInAmount = CurrencyAmount.fromRawAmount(tokenInInstance, reserveIn.toString())
     const reserveOutAmount = CurrencyAmount.fromRawAmount(tokenOutInstance, reserveOut.toString())
+
+    console.log(`ReserveInAmount: ${JSON.stringify(reserveInAmount)}`)
+    console.log(`ReserveOutAmount: ${JSON.stringify(reserveOutAmount)}`)
     
     const pair = new Pair(reserveInAmount as any, reserveOutAmount as any)
     const inputAmount = CurrencyAmount.fromRawAmount(tokenInInstance, amountIn.toString())
+
+    console.log(`pair: ${JSON.stringify(pair)}`)
+    console.log(`inputAmount: ${JSON.stringify(inputAmount)}`)
     
     let amountOutRaw: bigint
     try {
       const [amountOutCurrency] = pair.getOutputAmount(inputAmount as any)
+      console.log(`amountOutCurrency: ${JSON.stringify(amountOutCurrency)}`)
       amountOutRaw = toRawAmount(amountOutCurrency)
+      console.log(`amountOutRaw: ${amountOutRaw}`)
     } catch (error) {
       console.warn(`[UniswapV2] Quote failed for ${tokenIn.symbol}->${tokenOut.symbol}:`, (error as Error).message)
       return null

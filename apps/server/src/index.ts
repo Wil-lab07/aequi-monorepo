@@ -546,7 +546,7 @@ export const buildServer = async () => {
             return { error: 'invalid_request', message: 'tokenA and tokenB must be different' }
         }
 
-        const isNativeAddress = (addr: string) => 
+        const isNativeAddress = (addr: string) =>
             addr.toLowerCase() === NATIVE_ADDRESS.toLowerCase()
 
         const useNativeInput = isNativeAddress(tokenA)

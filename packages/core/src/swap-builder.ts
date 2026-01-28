@@ -224,9 +224,9 @@ export class SwapBuilder {
       const scaledHopExpectedOut = (hopExpectedOut * hopAmountIn) / quotedHopAmountIn
 
       const hopMinOut = this.deriveHopMinOut(
-        scaledHopExpectedOut,
-        amountOutMin,
-        quote.amountOut,
+        scaledHopExpectedOut, // hopExpectedAmount
+        amountOutMin, // totalMintOut
+        quote.amountOut, // TotalExpectedOut
         isLastHop,
       )
 
