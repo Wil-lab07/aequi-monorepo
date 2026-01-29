@@ -4,7 +4,7 @@ import { LENS_ABI, UNISWAP_V3_QUOTER_ABI } from '../config/abis';
 import { CHAIN_CONFIGS, ChainConfig, DexConfig } from '../config/chains';
 import { ProviderService } from './provider.service';
 import { QuoteResult, TokenMetadata, PriceSource as ApiPriceSource, RouteHopVersion, PriceQuote } from '../types/quote';
-import { computeMidPriceQ18FromReserves, computeExecutionPriceQ18, computePriceImpactBps, compareQuotes, computeMidPriceQ18FromSqrtPriceX96, estimateGasForRoute } from '../utils/math';
+import { computeMidPriceQ18FromReserves, computeExecutionPriceQ18, computePriceImpactBps, compareQuotes, computeMidPriceQ18FromSqrtPriceX96, estimateGasForRoute, applySlippage } from '../utils/math';
 
 interface DiscoveredPool {
     address: string;
@@ -95,14 +95,18 @@ export class QuoteService {
         ]);
 
         // Merge candidates
-        let candidates = [...directQuotes, ...multiHopQuotes];
+        const candidates = [...directQuotes, ...multiHopQuotes];
 
-        if (candidates.length === 0) {
-            throw new Error(`No route found for ${tokenIn.symbol}->${tokenOut.symbol}`);
+        // Filter out candidates with extreme price impact (> 15%) or zero output
+        const validCandidates = candidates.filter(c => c.amountOut > 0n && c.priceImpactBps < 1500);
+
+        if (validCandidates.length === 0) {
+            console.warn(`⚠️ All ${candidates.length} routes rejected due to high price impact or zero output.`);
+            throw new Error(`Price impact too high or no liquid route found for ${tokenIn.symbol}->${tokenOut.symbol}`);
         }
 
-        // 4. Select Best Quote
-        const bestQuote = this.selectBestQuote(candidates);
+        // 4. Select Best Quote from valid ones
+        const bestQuote = this.selectBestQuote(validCandidates);
 
         // Format Impact for logging
         const impactFormatted = (bestQuote.priceImpactBps / 100).toFixed(2);
@@ -131,12 +135,13 @@ export class QuoteService {
                 amountIn: s.amountIn.toString(),
                 amountOut: s.amountOut.toString()
             })),
+            estimatedGasUnits: c.estimatedGasUnits ? c.estimatedGasUnits.toString() : '0',
             estimatedGasCostWei: c.estimatedGasCostWei ? c.estimatedGasCostWei.toString() : '0',
             gasPriceWei: c.gasPriceWei ? c.gasPriceWei.toString() : '0'
         });
 
         // Populate offers (secondary options)
-        const offers = candidates
+        const offers = validCandidates
             .filter((c) => c !== bestQuote)
             .sort(compareQuotes)
             .map(mapCandidateToApi);
@@ -146,10 +151,13 @@ export class QuoteService {
             offers: offers.length > 0 ? offers : undefined
         };
 
+        // Calculate amountOutMin with slippage
+        const amountOutMin = applySlippage(bestQuote.amountOut, slippageBps);
+
         return {
             tokenIn,
             tokenOut,
-            amountOutMin: bestQuote.amountOut.toString(), // TODO: Apply slippage
+            amountOutMin: amountOutMin.toString(),
             slippageBps,
             quote: bestQuoteApi
         };

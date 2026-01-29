@@ -4,6 +4,7 @@ import express, { Request, Response } from "express";
 import routes from "./routes";
 import { getQuote } from "./controllers/quote.controller";
 import { swap } from "./controllers/swap.controller";
+import { getTokens } from "./controllers/token.controller";
 
 const app = express();
 
@@ -14,7 +15,7 @@ app.get("/health", (req: Request, res: Response) => {
   res.json({ status: "ok" });
 });
 
-app.use("/api", routes);
+app.get("/tokens", getTokens);
 app.get("/quote", getQuote);
 app.get("/swap", swap);
 

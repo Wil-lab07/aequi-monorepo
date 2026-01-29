@@ -23,9 +23,9 @@ const Home: NextPage = () => {
 
         <main className="flex flex-col items-center justify-center min-h-[60vh]">
           <div className="w-full max-w-md">
-            <h2 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 text-center mb-8">
+            {/* <h2 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 text-center mb-8">
               Swap seamlessly.
-            </h2>
+            </h2> */}
             <SwapInterface />
           </div>
         </main>

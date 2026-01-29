@@ -1,9 +1,10 @@
 import { ethers } from 'ethers';
 import { appConfig } from '../config/app-config';
-import { AEQUI_EXECUTOR_ABI, UNISWAP_V2_ROUTER_ABI, UNISWAP_V3_ROUTER_ABI, WETH_ABI, UNISWAP_V3_QUOTER_ABI, LENS_ABI } from '../config/abis';
+import { AEQUI_EXECUTOR_ABI, UNISWAP_V2_ROUTER_ABI, UNISWAP_V3_ROUTER_ABI, WETH_ABI, LENS_ABI } from '../config/abis';
 import { ChainConfig } from '../config/chains';
 import { TokenMetadata, PriceQuote } from '../types/quote';
 import { SwapTransaction, SwapBuildParams, ExecutorCallPlan } from '../types/swap';
+import { estimateGasForRoute, clampSlippage, applySlippage } from '../utils/math';
 
 export class SwapService {
     private static instance: SwapService;
@@ -27,11 +28,11 @@ export class SwapService {
 
         const deadlineSeconds = params.deadlineSeconds > 0 ? params.deadlineSeconds : 180;
         const deadline = Math.floor(Date.now() / 1000) + deadlineSeconds;
-        const boundedSlippage = this.clampSlippage(params.slippageBps);
+        const boundedSlippage = clampSlippage(params.slippageBps);
 
         const amountOutMinimum = params.amountOutMin > 0n
             ? params.amountOutMin
-            : this.applySlippage(BigInt(params.quote.amountOut), boundedSlippage);
+            : applySlippage(BigInt(params.quote.amountOut), boundedSlippage);
 
         return this.buildExecutorSwap(
             chain,
@@ -184,10 +185,9 @@ export class SwapService {
             } else {
                 const fee = source.feeTier || 3000;
                 swapCallData = this.encodeV3SingleHopCall(tokenIn.address, tokenNext.address, fee, hopAmountIn, hopMinOut, hopRecipient, deadline);
-                // V3: exactInputSingle((tokenIn, tokenOut, fee, recipient, deadline, amountIn, min, limit))
                 // amountIn is 6th struct member.
-                // Core Builder says: 4 + (5 * 32) = 164 for Standard Router
-                injectOffset = 164n;
+                // Standard ABI: 4 (selector) + 32 (struct pointer) + (5 * 32) (members before amountIn) = 196
+                injectOffset = 196n;
             }
 
             // Explanation.md #InjectionScenario
@@ -339,17 +339,6 @@ export class SwapService {
     }
 
     // Clamps slippage to 1000 bps (10%)
-    private clampSlippage(value: number): number {
-        if (!Number.isFinite(value) || Number.isNaN(value) || value < 0) return 0;
-        return value > 1000 ? 1000 : Math.floor(value);
-    }
-
-    // Applies slippage to amount
-    private applySlippage(amount: bigint, slippageBps: number): bigint {
-        if (amount === 0n || slippageBps <= 0) return amount;
-        const penalty = (amount * BigInt(slippageBps)) / 10000n;
-        return amount > penalty ? amount - penalty : 0n;
-    }
 
     // Derives minimum output for a hop based on total minimum and expected
     private deriveHopMinOut(hopExpected: bigint, totalMin: bigint, totalExpected: bigint, isLast: boolean): bigint {

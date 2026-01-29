@@ -168,3 +168,21 @@ export const estimateGasForRoute = (hops: ('v2' | 'v3')[]): bigint => {
 
     return base + BigInt(hops.length - 1) * GAS_MULTI_HOP_OVERHEAD;
 };
+
+// ==========================================
+// Slippage Helpers
+// ==========================================
+
+export const clampSlippage = (value: number): number => {
+    if (!Number.isFinite(value) || Number.isNaN(value) || value < 0) return 0;
+    // Clamping to 1000 bps (10%) for safety
+    return value > 1000 ? 1000 : Math.floor(value);
+};
+
+export const applySlippage = (amount: bigint, slippageBps: number): bigint => {
+    const boundedSlippage = clampSlippage(slippageBps);
+    if (amount === 0n || boundedSlippage <= 0) return amount;
+
+    const penalty = (amount * BigInt(boundedSlippage)) / 10000n;
+    return amount > penalty ? amount - penalty : 0n;
+};
