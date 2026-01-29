@@ -5,13 +5,18 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useTokens, Token } from '../hooks/useTokens';
 import { useQuote } from '../hooks/useQuote';
 import { useDebounce } from '../hooks/useDebounce';
+import { useTokenBalances } from '../hooks/useTokenBalances';
 
 import { useTokenAllowance } from '../hooks/useTokenAllowance';
+import { useSendTransaction, useWaitForTransactionReceipt } from 'wagmi';
+import { LoadingModal } from './LoadingModal';
+import { SuccessNotification } from './SuccessNotification';
 
 export function SwapInterface() {
     const isMounted = useIsMounted();
     const { isConnected, chainId, address } = useAccount();
     const { data: tokens } = useTokens(chainId);
+    const balances = useTokenBalances(address, tokens);
 
     const [sellAmount, setSellAmount] = useState('');
     const debouncedSellAmount = useDebounce(sellAmount, 500);
@@ -20,6 +25,24 @@ export function SwapInterface() {
     const [sellToken, setSellToken] = useState<Token | null>(null);
     const [buyToken, setBuyToken] = useState<Token | null>(null);
     const [showOffers, setShowOffers] = useState(false);
+
+    // Transaction State
+    const [txHash, setTxHash] = useState<`0x${string}` | undefined>(undefined);
+    const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+
+    const { sendTransaction, data: hash, isPending: isConfirming, error: sendError } = useSendTransaction();
+    const { isLoading: isProcessing, isSuccess: isTxSuccess } = useWaitForTransactionReceipt({
+        hash,
+    });
+
+    // Handle Transaction Success
+    useEffect(() => {
+        if (isTxSuccess && hash) {
+            setTxHash(hash);
+            setIsNotificationOpen(true);
+            setSellAmount(''); // Reset input
+        }
+    }, [isTxSuccess, hash]);
 
     // Set default tokens when loaded
     useEffect(() => {
@@ -42,7 +65,6 @@ export function SwapInterface() {
     const spender = quoteData?.transaction?.spender;
     const amountIn = quoteData?.transaction?.amountIn;
     // Assume ETH is Native (symbol 'ETH' or address ending in 'eee' depending on config, but symbol is safer for frontend display checks usually)
-    // Actually, asking backend might be better, but standard convention:
     const isNative = sellToken?.symbol === 'ETH'; // Simple check for Sepolia
 
     const { allowance, approve, isApproving, isApproved } = useTokenAllowance(
@@ -79,6 +101,17 @@ export function SwapInterface() {
         if (approve) await approve();
     };
 
+    const handleSwap = () => {
+        if (!quoteData?.transaction?.call) return;
+
+        sendTransaction({
+            to: quoteData.transaction.call.to as `0x${string}`,
+            data: quoteData.transaction.call.data as `0x${string}`,
+            value: quoteData.transaction.call.value ? BigInt(quoteData.transaction.call.value) : 0n,
+            gas: quoteData.transaction.estimatedGas ? BigInt(quoteData.transaction.estimatedGas) : undefined,
+        });
+    };
+
     return (
         <div className="w-full max-w-md p-6 bg-white rounded-xl shadow-lg border border-gray-100">
             <div className="flex justify-between items-center mb-6">
@@ -104,7 +137,10 @@ export function SwapInterface() {
                                 onChange={(e) => setSellToken(tokens.find(t => t.symbol === e.target.value) || null)}
                                 className="bg-white hover:bg-gray-50 text-gray-900 font-semibold py-1.5 px-2 rounded-lg shadow-sm border border-gray-200 text-sm outline-none cursor-pointer"
                             >
-                                {tokens.map(t => <option key={t.address} value={t.symbol}>{t.symbol}</option>)}
+                                {tokens.map(t => {
+                                    const bal = balances[t.address] ? parseFloat(balances[t.address]).toFixed(4) : '0';
+                                    return <option key={t.address} value={t.symbol}>{t.symbol} ({bal})</option>
+                                })}
                             </select>
                         ) : (
                             <div className="w-16 h-8 bg-gray-200 rounded animate-pulse"></div>
@@ -135,7 +171,10 @@ export function SwapInterface() {
                                 onChange={(e) => setBuyToken(tokens.find(t => t.symbol === e.target.value) || null)}
                                 className="bg-white hover:bg-gray-50 text-gray-900 font-semibold py-1.5 px-2 rounded-lg shadow-sm border border-gray-200 text-sm outline-none cursor-pointer"
                             >
-                                {tokens.map(t => <option key={t.address} value={t.symbol}>{t.symbol}</option>)}
+                                {tokens.map(t => {
+                                    const bal = balances[t.address] ? parseFloat(balances[t.address]).toFixed(4) : '0';
+                                    return <option key={t.address} value={t.symbol}>{t.symbol} ({bal})</option>
+                                })}
                             </select>
                         ) : (
                             <div className="w-16 h-8 bg-gray-200 rounded animate-pulse"></div>
@@ -154,16 +193,29 @@ export function SwapInterface() {
                     </button>
                 ) : (
                     <button
-                        disabled={!isMounted || !isConnected || isQuoteLoading || !!quoteError || needsApproval}
+                        onClick={handleSwap}
+                        disabled={!isMounted || !isConnected || isQuoteLoading || !!quoteError || needsApproval || isConfirming || isProcessing}
                         className={`w-full py-4 text-lg font-bold text-white rounded-xl shadow-md transition-all transform active:scale-[0.98] ${isMounted && isConnected && !quoteError
                             ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/25'
                             : 'bg-gray-300 cursor-not-allowed text-gray-500'
                             }`}
                     >
-                        {isQuoteLoading ? 'Fetching Quote...' : (quoteError ? 'No Route / Error' : (isMounted && isConnected ? 'Swap' : 'Connect Wallet to Swap'))}
+                        {isQuoteLoading ? 'Fetching Quote...' : (quoteError ? 'No Route / Error' : (isMounted && isConnected ? (isConfirming || isProcessing ? 'Processing...' : 'Swap') : 'Connect Wallet to Swap'))}
                     </button>
                 )}
             </div>
+
+            <LoadingModal
+                isOpen={isConfirming || isProcessing}
+                status={isConfirming ? 'confirming' : 'processing'}
+            />
+
+            {isNotificationOpen && txHash && (
+                <SuccessNotification
+                    txHash={txHash}
+                    onClose={() => setIsNotificationOpen(false)}
+                />
+            )}
 
             {/* Info Section - Always show if we have data */}
             {isMounted && isConnected && sellToken && buyToken && quoteData && (

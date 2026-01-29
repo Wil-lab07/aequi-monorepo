@@ -72,7 +72,8 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
             { symbol: 'UNI', name: 'Uniswap Token', address: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984', decimals: 18 },
             { symbol: 'USDC', name: 'USD Coin', address: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238', decimals: 6 },
             { symbol: 'USDT', name: 'Tether USD', address: '0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0', decimals: 6 },
-            { symbol: 'DAI', name: 'DAI', address: '0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357', decimals: 18 }
+            { symbol: 'DAI', name: 'DAI', address: '0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357', decimals: 18 },
+            { symbol: 'ETH', name: 'Ethereum', address: '0xEeeeeEeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', decimals: 18 }
         ]
     },
     // Binance Smart Chain (Mainnet) - Using standard public addresses
@@ -121,7 +122,8 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
             { symbol: 'USDT', name: 'Tether USD', address: '0x55d398326f99059fF775485246999027B3197955', decimals: 18 },
             { symbol: 'BUSD', name: 'Binance USD', address: '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56', decimals: 18 },
             { symbol: 'USDC', name: 'USD Coin', address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', decimals: 18 },
-            { symbol: 'ETH', name: 'Ethereum Token', address: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8', decimals: 18 }
+            { symbol: 'ETH', name: 'Ethereum Token', address: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8', decimals: 18 },
+            { symbol: 'BNB', name: 'Binance Coin', address: '0xEeeeeEeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', decimals: 18 }
         ]
     }
 };
