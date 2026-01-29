@@ -3,6 +3,7 @@ import express, { Request, Response } from "express";
 
 import routes from "./routes";
 import { getQuote } from "./controllers/quote.controller";
+import { swap } from "./controllers/swap.controller";
 
 const app = express();
 
@@ -15,5 +16,6 @@ app.get("/health", (req: Request, res: Response) => {
 
 app.use("/api", routes);
 app.get("/quote", getQuote);
+app.get("/swap", swap);
 
 export default app;

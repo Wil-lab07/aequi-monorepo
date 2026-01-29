@@ -30,3 +30,12 @@ export const LENS_ABI = [
     "function batchCheckAllowances(address[] calldata tokens, address owner, address spender) view returns (uint256[] memory)",
     "function batchGetTokenMetadata(address[] calldata tokens) view returns (tuple(address token, uint8 decimals, string symbol, string name, bool exists)[] memory results)"
 ];
+
+export const WETH_ABI = [
+    "function deposit() payable",
+    "function withdraw(uint256 amount)"
+];
+
+export const AEQUI_EXECUTOR_ABI = [
+    "function execute((address token, uint256 amount)[] pulls, (address token, address spender, uint256 amount)[] approvals, (address target, uint256 value, bytes data, address injectToken, uint256 injectOffset)[] calls, address[] tokensToFlush) payable returns (bytes[] results)"
+];

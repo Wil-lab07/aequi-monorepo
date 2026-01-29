@@ -95,7 +95,7 @@ export class QuoteService {
         ]);
 
         // Merge candidates
-        const candidates = [...directQuotes, ...multiHopQuotes];
+        let candidates = [...directQuotes, ...multiHopQuotes];
 
         if (candidates.length === 0) {
             throw new Error(`No route found for ${tokenIn.symbol}->${tokenOut.symbol}`);

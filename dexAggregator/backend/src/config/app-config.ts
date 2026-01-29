@@ -25,12 +25,12 @@ export const appConfig = {
         bsc: parseStringWithDefault(process.env.RPC_URL_BSC, 'https://binance.llamarpc.com'),
     },
     executor: {
-        sepolia: process.env.EXECUTOR_ADDRESS_SEPOLIA || '',
+        sepolia: process.env.EXECUTOR_ADDRESS_SEPOLIA || '0xCa9c2ce48cd0A89287762C30D76D6417888204d7',
         bsc: process.env.EXECUTOR_ADDRESS_BSC || '',
         interhopBufferBps: parseIntWithDefault(process.env.EXECUTOR_INTERHOP_BUFFER_BPS, 10),
     },
     lens: {
-        sepolia: process.env.LENS_ADDRESS_SEPOLIA || '',
+        sepolia: process.env.LENS_ADDRESS_SEPOLIA || '0xf9779CCEd6fc99Cd99062399F509DBe791D5afad',
         bsc: process.env.LENS_ADDRESS_BSC || '',
     },
     swap: {
